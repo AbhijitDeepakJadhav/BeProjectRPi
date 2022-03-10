@@ -6,17 +6,33 @@ import webbrowser
 import pymysql
 import datetime
 import time
+from smbus2 import SMBus
+from mlx90614 import MLX90614
 
-connection = pymysql.connect(host="be-project-database-1.chcsrix3zvtg.ap-south-1.rds.amazonaws.com",user="vrunda",password="vrunda1527",db="BE_Project")
-cursor = connection.cursor()
+bus = SMBus(1)
+sensor = MLX90614(bus, address=0x5A)
+
+#connection = pymysql.connect(host="be-project-database-1.chcsrix3zvtg.ap-south-1.rds.amazonaws.com",user="vrunda",password="vrunda1527",db="BE_Project")
+#cursor = connection.cursor()
 
 reader = SimpleMFRC522()
 app = Flask(__name__)
 app.secret_key = '_5#y2L"F4Q8z\n\xec]/'
 
+
+def getTemp():
+	room_temp = round(sensor.get_ambient(),0)
+	temp = round(sensor.get_object_1(),0)
+	while room_temp==temp:
+		room_temp = round(sensor.get_ambient(),0)
+		temp = round(sensor.get_object_1(),0)
+	return str(temp)
+
 @app.route('/register-new-member', methods=['GET','POST'])
 def Registeruser():
 	#For Registration
+	connection = pymysql.connect(host="be-project-database-1.chcsrix3zvtg.ap-south-1.rds.amazonaws.com",user="vrunda",password="vrunda1527",db="BE_Project")
+	cursor = connection.cursor()
 	insertqr = "insert into rfiduserdata(`Tagid`,`Name`, `Mname`, `Sname`,`Email`,`phone_no`,`flat_no`,`reg_date`,`dob`,`password`,`vaccination`,`frontline`)values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
 	insertuioc = "insert into inoutcount(`Tagid`, `EntryCount`, `ExitCount`,`inmonth`,`reset`,`Email`)values(%s,%s,%s,%s,%s,%s)"
 	if request.method == 'POST':
@@ -51,9 +67,11 @@ def Registeruser():
 
 @app.route('/')
 def index():
-	insertrec = "insert into userinout(`Tagid`, `Date`, `Time`, `Inout_Status`,`Email`)values(%s,%s,%s,%s,%s)"
-	updatentry = "update inoutcount set EntryCount=EntryCount+1,currentstat=%s where Tagid = %s"
-	updatexit = "update inoutcount set ExitCount=ExitCount+1,currentstat=%s where Tagid = %s"
+	connection = pymysql.connect(host="be-project-database-1.chcsrix3zvtg.ap-south-1.rds.amazonaws.com",user="vrunda",password="vrunda1527",db="BE_Project")
+	cursor = connection.cursor()
+	insertrec = "insert into userinout(`Tagid`, `Date`, `Time`, `Inout_Status`,`Email`,`temp`)values(%s,%s,%s,%s,%s,%s)"
+	updatentry = "update inoutcount set EntryCount=EntryCount+1,currentstat=%s,latest_temp=%s where Tagid = %s"
+	updatexit = "update inoutcount set ExitCount=ExitCount+1,currentstat=%s,latest_temp=%s where Tagid = %s"
 	try:
 		print("Please Tap you card...")
 		id,text=reader.read()
@@ -122,12 +140,12 @@ def index():
 		  'Time':tme,
 		  'Sts' :status
 			}
-			
-		cursor.execute(insertrec,(id,date,tme,status,Email))
+		temp = getTemp()
+		cursor.execute(insertrec,(id,date,tme,status,Email,temp))
 		if(status == "in"):
-			cursor.execute(updatentry,(status,id))
+			cursor.execute(updatentry,(status,temp,id))
 		else:
-			cursor.execute(updatexit,(status,id))
+			cursor.execute(updatexit,(status,temp,id))
 		connection.commit()
 		return render_template('index.html',**data)
 	finally:
